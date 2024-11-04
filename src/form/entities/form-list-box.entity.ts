@@ -21,6 +21,8 @@ export class FormListBox {
   @Column()
   content: string;
 
-  @ManyToOne(() => FormStateItem, (formStateItem) => formStateItem.listBox)
+  @ManyToOne(() => FormStateItem, (formStateItem) => formStateItem.listBox, {
+    onDelete: 'CASCADE',
+  })
   formStateItem: FormStateItem;
 }
