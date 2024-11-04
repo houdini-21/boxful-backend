@@ -25,7 +25,7 @@ export class CreateFormStateItemDto {
   @IsEmail()
   email: string;
 
-  @IsPhoneNumber()
+  @IsString()
   phone: string;
 
   @IsString()
