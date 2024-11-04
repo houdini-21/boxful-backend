@@ -1,87 +1,90 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { FormStateItem } from './entities/form-state-item.entity';
-import { FormListBox } from './entities/form-list-box.entity';
+import { PrismaService } from '../prisma.service';
 import { CreateFormStateItemDto } from './dto/create-form-state-item.dto';
 
 @Injectable()
 export class FormService {
-  constructor(
-    @InjectRepository(FormStateItem)
-    private formStateItemRepository: Repository<FormStateItem>,
-    @InjectRepository(FormListBox)
-    private formListBoxRepository: Repository<FormListBox>,
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
-  create(
-    createFormStateItemDto: CreateFormStateItemDto,
-  ): Promise<FormStateItem> {
-    const formStateItem = this.formStateItemRepository.create(
-      createFormStateItemDto,
-    );
-    return this.formStateItemRepository.save(formStateItem);
-  }
-
-  findAll(): Promise<FormStateItem[]> {
-    return this.formStateItemRepository.find({ relations: ['listBox'] });
-  }
-
-  findOne(id: number): Promise<FormStateItem> {
-    return this.formStateItemRepository.findOne({
-      where: { id },
-      relations: ['listBox'],
+  async create(createFormStateItemDto: CreateFormStateItemDto) {
+    return this.prisma.formStateItem.create({
+      data: {
+        ...createFormStateItemDto,
+        listBox: {
+          create: createFormStateItemDto.listBox,
+        },
+      },
     });
   }
 
-  async update(
-    id: number,
-    updateFormStateItemDto: CreateFormStateItemDto,
-  ): Promise<FormStateItem> {
-    const formStateItem = await this.formStateItemRepository.findOne({
-      where: { id },
-      relations: ['listBox'],
+  async findAll() {
+    return this.prisma.formStateItem.findMany({
+      include: { listBox: true },
     });
-    if (!formStateItem) {
-      throw new NotFoundException(`FormStateItem con ID ${id} no encontrado`);
-    }
-
-    formStateItem.address =
-      updateFormStateItemDto.address || formStateItem.address;
-    formStateItem.instructions =
-      updateFormStateItemDto.instructions || formStateItem.instructions;
-
-    if (updateFormStateItemDto.listBox) {
-      const existingListBoxIds = formStateItem.listBox.map((box) => box.id);
-
-      const updatedListBoxes = await Promise.all(
-        updateFormStateItemDto.listBox.map(async (box) => {
-          if (box.id && existingListBoxIds.includes(box.id)) {
-            await this.formListBoxRepository.update(box.id, box);
-            return this.formListBoxRepository.findOne({
-              where: { id: box.id },
-            });
-          } else {
-            const newListBox = this.formListBoxRepository.create({
-              ...box,
-              formStateItem,
-            });
-            return this.formListBoxRepository.save(newListBox);
-          }
-        }),
-      );
-
-      formStateItem.listBox = updatedListBoxes;
-    }
-
-    return this.formStateItemRepository.save(formStateItem);
   }
 
-  async remove(id: number): Promise<string> {
-    const deleteResult = await this.formStateItemRepository.delete(id);
-    if (!deleteResult.affected) {
+  async findOne(id: number) {
+    const formStateItem = await this.prisma.formStateItem.findUnique({
+      where: { id },
+      include: { listBox: true },
+    });
+    if (!formStateItem)
+      throw new NotFoundException(`Elemento con ID ${id} no encontrado`);
+    return formStateItem;
+  }
+
+  async update(id: number, updateFormStateItemDto: CreateFormStateItemDto) {
+    const existingFormStateItem = await this.prisma.formStateItem.findUnique({
+      where: { id },
+    });
+
+    if (!existingFormStateItem) {
       throw new NotFoundException(`Elemento con ID ${id} no encontrado`);
     }
+
+    const { listBox, ...formStateData } = updateFormStateItemDto;
+
+    const updatedListBoxes = listBox.map((box) => {
+      if (box.id) {
+        return this.prisma.formListBox.update({
+          where: { id: box.id },
+          data: {
+            weight: box.weight,
+            lengthValue: box.lengthValue,
+            height: box.height,
+            width: box.width,
+            content: box.content,
+          },
+        });
+      } else {
+        return this.prisma.formListBox.create({
+          data: {
+            weight: box.weight,
+            lengthValue: box.lengthValue,
+            height: box.height,
+            width: box.width,
+            content: box.content,
+            formStateItemId: id,
+          },
+        });
+      }
+    });
+
+    await this.prisma.$transaction(updatedListBoxes);
+
+    return this.prisma.formStateItem.update({
+      where: { id },
+      data: {
+        ...formStateData,
+      },
+      include: {
+        listBox: true,
+      },
+    });
+  }
+
+  async remove(id: number) {
+    await this.prisma.formStateItem.delete({ where: { id } });
     return 'Elemento eliminado';
   }
 }
