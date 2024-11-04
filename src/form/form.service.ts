@@ -77,7 +77,11 @@ export class FormService {
     return this.formStateItemRepository.save(formStateItem);
   }
 
-  remove(id: number): Promise<void> {
-    return this.formStateItemRepository.delete(id).then(() => undefined);
+  async remove(id: number): Promise<string> {
+    const deleteResult = await this.formStateItemRepository.delete(id);
+    if (!deleteResult.affected) {
+      throw new NotFoundException(`Elemento con ID ${id} no encontrado`);
+    }
+    return 'Elemento eliminado';
   }
 }
